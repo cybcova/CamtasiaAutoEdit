@@ -1,7 +1,7 @@
 # Python 3 - 23.2.1
 # pip install opencv-python
 # pip install Pillow
-# pip install readline
+# pip install prompt_toolkit
 
 import os
 import json
