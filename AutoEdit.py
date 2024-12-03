@@ -1,6 +1,7 @@
 # Python 3 - 23.2.1
 # pip install opencv-python
 # pip install Pillow
+# pip install readline
 
 import os
 import json
@@ -8,14 +9,174 @@ import copy
 import cv2
 import math
 
+from prompt_toolkit import prompt
 from datetime import datetime
 from PIL import Image
 from fractions import Fraction
 from PIL.ExifTags import TAGS
 
+# Por alguna razon Camtasia en la linea de tiempo de edicio divide cada segundo en 30 partes, 
+# cada unidad equivale 23520000, que no se a que se refiera por que ya no es divisible,
+# todo se calcula apartir de esa "unidad"
 TREINTAVO_SEGUNDO_EQUIVALENTE  = 23520000
 
-def get_camtasia_duration(video_path):
+# Mapeo de dimensiones a los valores de escala para clip principal
+scale_map = {
+    (1920, 1080): 0.316,
+    (1080, 1920): 0.5625,
+    (2448, 3264): 0.24836,
+    (3264, 2448): 0.18627,
+    (1944, 2592): 0.31276,
+    (2592, 1944): 0.23457,
+    (1280, 720): 0.475,
+    (720, 1280): 0.84375,
+}
+
+def main():
+    
+    # Capturar Nombre de proyecto
+    nombreProyecto = input_con_sugerencia("Nombre de proyecto: ", "00000")
+    
+    #Extraer los archivos locales solo jpg y mp4
+    archivos = os.listdir('./')
+    filtrados = sorted([f for f in archivos if f.endswith(('.mp4', '.jpg'))])
+
+    #Extraer json ejemplo del guardado de camtasia
+    with open('SampleProject.json', 'r') as sampleProjectFile:
+        sampleProjectJson = json.load(sampleProjectFile)
+
+    # Extraer ejemplo principal
+    mainProject = sampleProjectJson['mainTemplate']
+
+    # Iniciar array con archivos a importar al proyecto y id para cada uno de ellos
+    mainProject['sourceBin']= []
+    idCont = 0
+
+    # Iteracion por cada archivo multimedia encontrado localmente
+    for sourceI in filtrados:
+
+        # Reiniciar fuente de multimedio y arreglo de dimensiones de multimedia
+        sourceBin = 0
+        rect = [0,0,0,0]
+
+        # Si archivo presente es video
+        if sourceI.endswith('.mp4'):
+            # Extraer ejemplo de inclusion de archivo mp4 al proyecto
+            sourceBin = sampleProjectJson['sourceBinMp4']
+
+            # Establecer dimensiones para video
+            video = cv2.VideoCapture(sourceI)
+            rect[2] = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+            rect[3] = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+            # Calcular range (asumiendo editRate = 90000)
+            edit_rate = 90000
+            range_start = 0
+            range_end = int(edit_rate * get_duration_in_seconds(sourceI))
+            sourceBin['sourceTracks'][0]['range'] = [range_start, range_end]
+
+            # Convertir FPS a una fracción para sample rate
+            fps_fraction = Fraction(video.get(cv2.CAP_PROP_FPS)).limit_denominator()
+            sourceBin['sourceTracks'][0]['sampleRate'] = f"{fps_fraction}"
+        
+        # Si archivo presente es imagen
+        if sourceI.endswith('.jpg'):
+            # Extraer ejemplo de inclusion de archivo jpg al proyecto
+            sourceBin = sampleProjectJson['sourceBinJpg']
+
+            # Establecer dimensiones para imagenes
+            imagen = Image.open(sourceI)
+            ancho, alto = imagen.size
+            # rect se mantiene para Orientation 1, 3
+            # rect se invierte para Orientation 6, 8
+            if(get_orientation(sourceI) <= 3):
+                rect[2] = ancho
+                rect[3] = alto
+            else:
+                rect[2] = alto
+                rect[3] = ancho
+            
+        #Establecer otras propiedades comunes
+        idCont= idCont +1
+        sourceBin['id'] = idCont
+        sourceBin['src'] = sourceI
+        sourceBin['rect'] = rect
+        sourceBin['sourceTracks'][0]['trackRect'] = rect
+        sourceBin['sourceTracks'][0]['metaData'] = sourceI + ";"
+        
+        #Aniadir multimedia configurada a la fuentes del proyecto
+        mainProject['sourceBin'].append(copy.deepcopy(sourceBin))
+
+    #Iniciar el tiempo de Camtasia y el id para cada uno de los elementos de esa linea de tiempo
+    currentCamtasiaTime = 0
+    idCmsl = 0
+
+    # Iteracion por cada archivo multimedia importado pues se reproducira en orden y solo una vez
+    for sourceI in mainProject['sourceBin']:
+        # Reiniciar elemento a añadir el linea de tiempo
+        csml = 0
+
+        # Si archivo multimedia presente es video
+        if sourceI['src'].endswith('.mp4'):
+            # Extraer ejemplo de manipulaccion en linea de tiempo de video
+            csml = sampleProjectJson['trackMediaVid']
+            
+            # Extraer duracion en segundos y en valor de tiempo de Camtasia
+            durationSeconds = get_duration_in_seconds(sourceI['src'])
+            originalCamtasiaDuration = get_camtasia_duration(sourceI['src'])
+
+            # Añadir velocidad dependiendo de su duracion 
+            # Menor a 10 minutos sera una fraccion de segundo especifica
+            # MAyor a 10 minutos la velocidad se aumentara x 250
+            if(durationSeconds < 10):
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 15
+            elif(durationSeconds < 120):
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 30
+            elif(durationSeconds < 600):
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 45
+            else:
+                speedCamtasiaDuration = originalCamtasiaDuration/250
+        
+        # Si archivo multimedia presente es imagenx
+        if sourceI['src'].endswith('.jpg'):
+            # Extraer ejemplo de manipulaccion en linea de tiempo de imagen
+            csml = sampleProjectJson['trackMediaImg']
+
+            # Toda imagen durara solo 2/3 de fraccion de segundo
+            originalCamtasiaDuration = speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 20
+
+        # Obtener las dimensiones actuales
+        dimensions = (sourceI['rect'][2], sourceI['rect'][3])
+
+        # Asignar el valor de escala correspondiente si existe en el mapa
+        # Tamanio de imagen o video en clip principal dependiendo sus dimensiones
+        if dimensions in scale_map:
+            scale_value = scale_map[dimensions]
+            csml['parameters']['scale0']['defaultValue'] = scale_value
+            csml['parameters']['scale1']['defaultValue'] = scale_value
+
+        # Asignar valores calculados y comunes a elemento en linea de tiempo
+        idCmsl=idCmsl+1
+        csml['id'] = idCmsl
+        csml['src'] = sourceI['id']
+        csml['attributes']['ident'] = sourceI['src'].split('.')[0]
+        csml['start'] = currentCamtasiaTime
+        csml['duration'] = speedCamtasiaDuration
+        csml['mediaDuration'] = originalCamtasiaDuration
+        currentCamtasiaTime = currentCamtasiaTime + speedCamtasiaDuration
+        
+        # Agregar finalmente el elemento modificado a la linea de tiempo
+        mainProject['timeline']['sceneTrack']['scenes'][0]['csml']['tracks'][0]['medias'].append(copy.deepcopy(csml))
+
+    with open(nombreProyecto + '.tscproj', 'w') as archivo:
+        archivo.write(json.dumps(mainProject))
+    print("Proyecto " + nombreProyecto + '.tscproj ' + "creado exitosamente!")
+
+
+def input_con_sugerencia(prompt_text, sugerencia):
+    return prompt(prompt_text, default=sugerencia)
+
+def get_duration_in_seconds(video_path):
 
     video = cv2.VideoCapture(video_path)
     # Total de frames y FPS
@@ -23,19 +184,14 @@ def get_camtasia_duration(video_path):
     fps = video.get(cv2.CAP_PROP_FPS)
 
     # Duración aproximada en segundos
-    duracion_segundos = total_frames / fps if fps > 0 else 0
+    return total_frames / fps if fps > 0 else 0
 
-    #print(f'Total de frames: {total_frames}')
-    #print(f'FPS: {fps}')
-    #print(f'Duración en segundos: {duracion_segundos}')
-    
+def get_camtasia_duration(video_path):
+
     #Me la vole, pfff pura ingenieria reversa alv
-    equivalente30avos = math.floor(duracion_segundos * 30)
-    
-   # print(f'Equivalencia directa: {equivalente30avos * TREINTAVO_SEGUNDO_EQUIVALENTE}')
+    equivalente30avos = math.floor(get_duration_in_seconds(video_path) * 30)
 
     return equivalente30avos * TREINTAVO_SEGUNDO_EQUIVALENTE
-
 
 def get_orientation(image_path):
     try:
@@ -61,99 +217,5 @@ def get_orientation(image_path):
         print(f"Error al leer EXIF de {image_path}: {e}")
         return None
 
-
-archivos = os.listdir('./')
-filtrados = sorted([f for f in archivos if f.endswith(('.mp4', '.jpg'))])
-
-with open('SampleProject.json', 'r') as sampleProjectFile:
-    sampleProjectJson = json.load(sampleProjectFile)
-
-mainProject = sampleProjectJson['mainTemplate']
-
-mainProject['sourceBin']= []
-idCont = 0
-for sourceI in filtrados:
-    #print(sourceI)
-    idCont= idCont +1
-
-    sourceBin = 0
-    rect = [0,0,0,0]
-    if sourceI.endswith('.mp4'):
-        sourceBin = sampleProjectJson['sourceBinMp4']
-        video = cv2.VideoCapture(sourceI)
-        rect[2] = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        rect[3] = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # Obtener propiedades
-        fps = video.get(cv2.CAP_PROP_FPS)
-        frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
-
-        # Calcular duración en segundos
-        duration_seconds = frame_count / fps if fps > 0 else 0
-
-        # Calcular range (asumiendo editRate = 90000)
-        edit_rate = 90000
-        range_start = 0
-        range_end = int(duration_seconds * edit_rate)
-        sourceBin['sourceTracks'][0]['range'] = [range_start, range_end]
-
-        # Convertir FPS a una fracción
-        fps_fraction = Fraction(fps).limit_denominator()
-        sourceBin['sourceTracks'][0]['sampleRate'] = f"{fps_fraction}"
-            
-    if sourceI.endswith('.jpg'):
-        sourceBin = sampleProjectJson['sourceBinJpg']
-        imagen = Image.open(sourceI)
-        ancho, alto = imagen.size
-        # rect se mantiene para Orientation 1, 3
-        # rect se invierte para Orientation 6, 8
-        if(get_orientation(sourceI) <= 3):
-            rect[2] = ancho
-            rect[3] = alto
-        else:
-            rect[2] = alto
-            rect[3] = ancho
-        
-        
-    sourceBin['id'] = idCont
-    sourceBin['src'] = sourceI
-    sourceBin['rect'] = rect
-    sourceBin['sourceTracks'][0]['trackRect'] = rect
-    sourceBin['sourceTracks'][0]['metaData'] = sourceI + ";"
-       
-    mainProject['sourceBin'].append(copy.deepcopy(sourceBin))
-
-currentCamtasiaTime = 0
-idCmsl = 0
-for sourceI in mainProject['sourceBin']:
-    print(sourceI['src'])
-    csml = 0
-    if sourceI['src'].endswith('.mp4'):
-        csml = sampleProjectJson['trackMediaVid']
-        camtasiaDuration = get_camtasia_duration(sourceI['src'])
-
-    if sourceI['src'].endswith('.jpg'):
-        csml = sampleProjectJson['trackMediaImg']
-        camtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 20
-
-    idCmsl=idCmsl+1
-    csml['id'] = idCmsl
-    csml['src'] = sourceI['id']
-    csml['attributes']['ident'] = sourceI['src'].split('.')[0]
-    csml['start'] = currentCamtasiaTime
-    csml['duration'] = camtasiaDuration
-    csml['mediaDuration'] = camtasiaDuration
-    currentCamtasiaTime = currentCamtasiaTime + camtasiaDuration
-
-    print(csml)
-    
-    mainProject['timeline']['sceneTrack']['scenes'][0]['csml']['tracks'][0]['medias'].append(copy.deepcopy(csml))
-
-#print(mainProject['sourceBin'])
-
-
-
-fecha_hora = datetime.now().strftime('%y%m%d-%H%M')
-
-with open(fecha_hora + '.tscproj', 'w') as archivo:
-    archivo.write(json.dumps(mainProject))
+#Para mi tok, que el codigo principal va hasta arriba
+main()
