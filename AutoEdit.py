@@ -119,7 +119,7 @@ def main():
 
     # Iteracion por cada archivo multimedia importado pues se reproducira en orden y solo una vez
     for sourceBin in mainProject['sourceBin']:
-        print(sourceBin)
+        print(sourceBin['src'])
         # Reiniciar elemento a añadir el linea de tiempo
         csml = 0
 
@@ -132,17 +132,15 @@ def main():
             durationSeconds = get_duration_in_seconds(sourceBin['src'])
             originalCamtasiaDuration = get_camtasia_duration(sourceBin['src'])
             
-            print(durationSeconds)
-
-            # Añadir velocidad dependiendo de su duracion 
+            # Aniadir velocidad dependiendo de su duracion 
             # Menor a 10 minutos sera una fraccion de segundo especifica
             # MAyor a 10 minutos la velocidad se aumentara x 250
             if(durationSeconds < 10):
-                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 15
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 10
             elif(durationSeconds < 120):
-                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 30
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 60
             elif(durationSeconds < 600):
-                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 45
+                speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 250
             else:
                 speedCamtasiaDuration = originalCamtasiaDuration/250
         
