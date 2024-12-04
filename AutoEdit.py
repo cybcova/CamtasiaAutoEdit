@@ -60,7 +60,6 @@ def main():
 
     # Iteracion por cada archivo multimedia encontrado localmente
     for sourceI in filtrados:
-        print(sourceI)
 
         # Reiniciar fuente de multimedio y arreglo de dimensiones de multimedia
         sourceBin = 0
@@ -119,18 +118,21 @@ def main():
     idCmsl = 0
 
     # Iteracion por cada archivo multimedia importado pues se reproducira en orden y solo una vez
-    for sourceI in mainProject['sourceBin']:
+    for sourceBin in mainProject['sourceBin']:
+        print(sourceBin)
         # Reiniciar elemento a añadir el linea de tiempo
         csml = 0
 
         # Si archivo multimedia presente es video
-        if sourceI['src'].endswith('.mp4'):
+        if sourceBin['src'].endswith('.mp4'):
             # Extraer ejemplo de manipulaccion en linea de tiempo de video
             csml = sampleProjectJson['trackMediaVid']
             
             # Extraer duracion en segundos y en valor de tiempo de Camtasia
-            durationSeconds = get_duration_in_seconds(sourceI['src'])
-            originalCamtasiaDuration = get_camtasia_duration(sourceI['src'])
+            durationSeconds = get_duration_in_seconds(sourceBin['src'])
+            originalCamtasiaDuration = get_camtasia_duration(sourceBin['src'])
+            
+            print(durationSeconds)
 
             # Añadir velocidad dependiendo de su duracion 
             # Menor a 10 minutos sera una fraccion de segundo especifica
@@ -145,7 +147,7 @@ def main():
                 speedCamtasiaDuration = originalCamtasiaDuration/250
         
         # Si archivo multimedia presente es imagenx
-        if sourceI['src'].endswith('.jpg'):
+        if sourceBin['src'].endswith('.jpg'):
             # Extraer ejemplo de manipulaccion en linea de tiempo de imagen
             csml = sampleProjectJson['trackMediaImg']
 
@@ -153,7 +155,7 @@ def main():
             originalCamtasiaDuration = speedCamtasiaDuration = TREINTAVO_SEGUNDO_EQUIVALENTE * 20
 
         # Obtener las dimensiones actuales
-        dimensions = (sourceI['rect'][2], sourceI['rect'][3])
+        dimensions = (sourceBin['rect'][2], sourceBin['rect'][3])
 
         # Asignar el valor de escala correspondiente si existe en el mapa
         # Tamanio de imagen o video en clip principal dependiendo sus dimensiones
@@ -165,8 +167,8 @@ def main():
         # Asignar valores calculados y comunes a elemento en linea de tiempo
         idCmsl=idCmsl+1
         csml['id'] = idCmsl
-        csml['src'] = sourceI['id']
-        csml['attributes']['ident'] = sourceI['src'].split('.')[0]
+        csml['src'] = sourceBin['id']
+        csml['attributes']['ident'] = sourceBin['src'].split('.')[0]
         csml['start'] = currentCamtasiaTime
         csml['duration'] = speedCamtasiaDuration
         csml['mediaDuration'] = originalCamtasiaDuration
