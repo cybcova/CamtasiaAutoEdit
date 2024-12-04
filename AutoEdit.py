@@ -39,7 +39,13 @@ def main():
     
     #Extraer los archivos locales solo jpg y mp4
     archivos = os.listdir('./')
-    filtrados = sorted([f for f in archivos if f.endswith(('.mp4', '.jpg'))])
+    filtrados = [f for f in archivos if f.endswith(('.mp4', '.jpg'))]
+
+    # Ordenar por la parte del nombre deseada
+    filtrados = sorted(
+        filtrados,
+        key=lambda f: f.split('_', 1)[1].split('.', 1)[0]  # Extraer la parte después del primer '_' y antes del '.'
+    )
 
     #Extraer json ejemplo del guardado de camtasia
     with open('SampleProject.json', 'r') as sampleProjectFile:
@@ -54,6 +60,7 @@ def main():
 
     # Iteracion por cada archivo multimedia encontrado localmente
     for sourceI in filtrados:
+        print(sourceI)
 
         # Reiniciar fuente de multimedio y arreglo de dimensiones de multimedia
         sourceBin = 0
